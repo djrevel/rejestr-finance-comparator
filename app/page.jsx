@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 
-const DEFAULT_IDS = Array.from({ length: 10 }, () => '');
+const MAX_COMPANIES = 20;
+const DEFAULT_IDS = Array.from({ length: MAX_COMPANIES }, () => '');
 
 function toNumber(v) {
   if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -130,6 +131,10 @@ function KpiTable({ rows = [], columns = [] }) {
 
 export default function Page() {
   const [ids, setIds] = useState(DEFAULT_IDS);
+  const [personInput, setPersonInput] = useState('');
+  const [personLoading, setPersonLoading] = useState(false);
+  const [personError, setPersonError] = useState('');
+  const [personResult, setPersonResult] = useState(null);
   const [periodStart, setPeriodStart] = useState('2024-01-01');
   const [periodEnd, setPeriodEnd] = useState('2024-12-31');
   const [valueField, setValueField] = useState('pln_rok_obrotowy_biezacy');
@@ -145,6 +150,32 @@ export default function Page() {
       ...(c.warnings || []).map(w => `${c.kind || ''} ${c.display}: ${w}`)
     ]);
   }, [data]);
+
+  async function loadPersonCompanies() {
+    setPersonLoading(true);
+    setPersonError('');
+    setPersonResult(null);
+    try {
+      const res = await fetch('/api/person-companies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personInput, periodStart, periodEnd, max: MAX_COMPANIES })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setPersonError(json.error ? `${json.error}${json.details ? `\n${JSON.stringify(json.details, null, 2)}` : ''}` : 'Błąd pobierania powiązań osoby.');
+        return;
+      }
+
+      const next = Array.from({ length: MAX_COMPANIES }, (_, i) => json.companies?.[i]?.preferredId || '');
+      setIds(next);
+      setPersonResult(json);
+    } catch (e) {
+      setPersonError(e?.message || String(e));
+    } finally {
+      setPersonLoading(false);
+    }
+  }
 
   async function compare() {
     setLoading(true);
@@ -172,9 +203,32 @@ export default function Page() {
   return (
     <main>
       <h1>Porównywarka bilansu, RZiS i KPI — Rejestr.io</h1>
-      <p className="lead">Wpisz do 10 numerów NIP albo KRS. Możesz wpisać same cyfry albo jawnie: NIP 5882421573 / KRS 0000956152. Przy 10 cyfrach bez prefiksu aplikacja spróbuje najpierw NIP, potem KRS.</p>
+      <p className="lead">Wpisz do 20 numerów NIP albo KRS. Możesz wpisać same cyfry albo jawnie: NIP 5882421573 / KRS 0000956152. Przy 10 cyfrach bez prefiksu aplikacja spróbuje najpierw NIP, potem KRS. Możesz też wkleić ID albo link osoby z Rejestr.io, a aplikacja wypełni pola aktualnie powiązanymi spółkami, które mają dokumenty finansowe w wybranym okresie.</p>
 
       <div className="card">
+        <div className="person-loader">
+          <div className="control person-input">
+            <label>Osoba z Rejestr.io — ID albo link</label>
+            <input
+              value={personInput}
+              placeholder="np. 123456 albo https://rejestr.io/osoby/123456/jan-kowalski"
+              onChange={e => setPersonInput(e.target.value)}
+            />
+          </div>
+          <button onClick={loadPersonCompanies} disabled={personLoading || !personInput.trim()}>
+            {personLoading ? 'Szukam spółek…' : 'Wczytaj spółki osoby'}
+          </button>
+        </div>
+
+        {personError ? <pre className="error">{personError}</pre> : null}
+        {personResult ? (
+          <div className="person-result">
+            Wczytano <strong>{personResult.companies.length}</strong> z <strong>{personResult.totalWithReports}</strong> aktualnie powiązanych spółek z dokumentami dla okresu.
+            {personResult.truncated ? ` Pokazuję pierwsze ${MAX_COMPANIES}; pozostałe można dopisać ręcznie.` : ''}
+            {personResult.skipped?.length ? <div className="small">Pominięto {personResult.skipped.length} spółek bez dokumentów w wybranym okresie albo z błędem odczytu.</div> : null}
+          </div>
+        ) : null}
+
         <div className="form-grid">
           {ids.map((id, idx) => (
             <input

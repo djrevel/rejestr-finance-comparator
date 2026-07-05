@@ -4,13 +4,25 @@ Aplikacja Next.js gotowa do wdrożenia na Vercel. Działa jako jedna strona + ba
 
 ## Co robi
 
-- wpisanie do 10 numerów NIP albo KRS,
+- wpisanie do 20 numerów NIP albo KRS,
 - pobranie z Rejestr.io bilansu i rachunku zysków i strat dla wskazanego okresu,
 - tabela: opis | suma | spółka 1 | spółka 2 | ...,
 - osobne tabele: Aktywa, Pasywa, RZiS,
 - tabela KPI: EBITDA, EBIT, EBT, kapitał własny/suma bilansowa, RoS, RoE, rotacja zapasów itd.,
-- eksport CSV dla każdej tabeli.
+- eksport CSV dla każdej tabeli,
+- wczytanie aktualnie powiązanych spółek po ID/linku osoby z Rejestr.io i automatyczne uzupełnienie pól NIP/KRS.
 
+
+## Wczytywanie spółek po osobie z Rejestr.io
+
+Nad polami NIP/KRS jest sekcja **Osoba z Rejestr.io — ID albo link**. Możesz wkleić np.:
+
+```text
+123456
+https://rejestr.io/osoby/123456/jan-kowalski
+```
+
+Aplikacja odpytuje endpoint `GET /api/v2/osoby/{id}/krs-powiazania?aktualnosc=aktualne`, pomija spółki wykreślone oraz te bez dokumentów finansowych w wybranym okresie, a następnie uzupełnia maksymalnie 20 pól NIP/KRS. Jeśli powiązanych spółek jest więcej niż 20, pozostałe można dopisać ręcznie.
 
 ## NIP czy KRS
 

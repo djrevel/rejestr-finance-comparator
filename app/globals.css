@@ -71,3 +71,26 @@ td.sum, th.sum { min-width: 150px; width: 150px; font-weight: 700; }
   font-weight: 700;
   white-space: nowrap;
 }
+
+.person-loader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line2);
+}
+
+.person-input {
+  flex: 1 1 460px;
+}
+
+.person-result {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #c7d7fe;
+  border-radius: 12px;
+  background: #eef3ff;
+  color: #123b80;
+}

@@ -714,7 +714,7 @@ export async function POST(req) {
     const periodEnd = body.periodEnd || '2024-12-31';
     const valueField = body.valueField || CURRENT_FIELD;
 
-    const normalized = ids.map(normalizeOrgId).filter(Boolean).slice(0, 10);
+    const normalized = ids.map(normalizeOrgId).filter(Boolean).slice(0, 20);
     if (!normalized.length) return json({ error: 'Podaj co najmniej jeden NIP albo KRS.' }, 400);
 
     const results = [];
