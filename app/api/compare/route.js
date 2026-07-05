@@ -258,17 +258,34 @@ function combineSectionRows(companies, sectionName, valueField) {
   return order.map(k => map.get(k));
 }
 
+function splitCamelCase(s) {
+  return String(s || '').replace(/([a-ząćęłńóśźż])([A-ZĄĆĘŁŃÓŚŹŻ])/g, '$1 $2');
+}
+
 function flattenAllNodes(root, source) {
   const out = [];
   function walk(node, path = []) {
     if (!node) return;
     const label = labelOf(node);
+    const nodeName = node?.nazwa_wezla || '';
+    const pathLabel = [...path, label].join(' / ');
+    const labelNorm = normalizeText(label);
+    const nodeNameNorm = normalizeText(splitCamelCase(nodeName));
+    const compactNodeNameNorm = normalizeText(nodeName);
+    const pathNorm = normalizeText(pathLabel);
+    const searchText = [labelNorm, nodeNameNorm, compactNodeNameNorm, pathNorm].filter(Boolean).join(' | ');
+
     const item = {
       node,
       source,
       label,
-      labelNorm: normalizeText(label),
-      path: [...path, label].join(' / '),
+      labelNorm,
+      nodeName,
+      nodeNameNorm,
+      compactNodeNameNorm,
+      path: pathLabel,
+      pathNorm,
+      searchText,
       current: getNodeValue(node, CURRENT_FIELD),
       previous: getNodeValue(node, PREVIOUS_FIELD)
     };
@@ -286,16 +303,22 @@ function findMetric(nodes, includeRegex, options = {}) {
 
   const candidates = nodes.filter(n => {
     if (source && n.source !== source) return false;
-    const text = n.labelNorm;
+    const text = options.labelOnly ? n.labelNorm : n.searchText;
     return includes.every(rx => rx.test(text)) && excludes.every(rx => !rx.test(text));
   });
 
-  // Prefer rows with a numeric value and shortest label/path (often the aggregate row).
+  // Prefer rows with a numeric value and shortest path (often the aggregate row).
+  // Then prefer aggregate-looking labels such as '... razem' and technical node names over nested details.
   return candidates
     .sort((a, b) => {
       const av = a.current !== null ? 0 : 1;
       const bv = b.current !== null ? 0 : 1;
       if (av !== bv) return av - bv;
+
+      const ar = /razem|ogolem|suma/.test(a.labelNorm) ? 0 : 1;
+      const br = /razem|ogolem|suma/.test(b.labelNorm) ? 0 : 1;
+      if (ar !== br) return ar - br;
+
       return a.path.length - b.path.length;
     })[0] || null;
 }
@@ -323,26 +346,39 @@ function computeBaseMetrics(balanceRoot, pnlRoot) {
   ];
 
   const assets = findMetric(nodes, [/^aktywa razem$/], { source: 'balance' })
-    || findMetric(nodes, [/aktywa razem/], { source: 'balance' });
+    || findMetric(nodes, [/aktywa.*razem|aktywarazem/], { source: 'balance' });
   const liabilitiesTotal = findMetric(nodes, [/^pasywa razem$/], { source: 'balance' })
-    || findMetric(nodes, [/pasywa razem/], { source: 'balance' });
-  const equity = findMetric(nodes, [/kapital.*fundusz.*wlasny/], { source: 'balance', exclude: [/nalezny|wplaty|udzialy.*wlasne/] })
-    || findMetric(nodes, [/kapital wlasny/], { source: 'balance' });
-  const inventory = findMetric(nodes, [/^zapasy$/], { source: 'balance' })
+    || findMetric(nodes, [/pasywa.*razem|pasywarazem/], { source: 'balance' });
+  const equity = findMetric(nodes, [/kapital.*fundusz.*wlasny|kapitalfunduszwlasny|kapital.*wlasny/], {
+      source: 'balance',
+      exclude: [/nalezny|wplaty|udzialy.*wlasne|kapital.*podstawowy|kapital.*zapasowy|kapital.*rezerwowy|zysk.*strata/]
+    })
+    || findMetric(nodes, [/^kapital.*wlasny$/], { source: 'balance', labelOnly: true });
+  const inventory = findMetric(nodes, [/^zapasy$/], { source: 'balance', labelOnly: true })
     || findMetric(nodes, [/zapasy/], { source: 'balance' });
-  const currentAssets = findMetric(nodes, [/aktywa obrotowe/], { source: 'balance' });
-  const shortLiabilities = findMetric(nodes, [/zobowiazania krotkoterminowe/], { source: 'balance' });
+  const currentAssets = findMetric(nodes, [/aktywa.*obrotowe|aktywaobrotowe/], { source: 'balance' });
+  const shortLiabilities = findMetric(nodes, [/zobowiazania.*krotkoterminowe|zobowiazaniakrotkoterminowe/], { source: 'balance' });
 
-  const revenue = findMetric(nodes, [/przychody netto.*sprzedazy/], { source: 'pnl' })
+  const revenue = findMetric(nodes, [/przychody.*netto.*sprzedazy|przychodynettozesprzedazy/], { source: 'pnl' })
     || findMetric(nodes, [/przychody.*sprzedazy/], { source: 'pnl' })
     || findMetric(nodes, [/przychody netto/], { source: 'pnl' });
-  const ebit = findMetric(nodes, [/zysk.*strata.*dzialalnosci operacyjnej/], { source: 'pnl' })
-    || findMetric(nodes, [/wynik.*dzialalnosci operacyjnej/], { source: 'pnl' });
-  const ebt = findMetric(nodes, [/zysk.*strata.*brutto/], { source: 'pnl', exclude: [/sprzedazy/] });
-  const net = findMetric(nodes, [/zysk.*strata.*netto/], { source: 'pnl' });
-  const amort = findMetric(nodes, [/^amortyzacja$/], { source: 'pnl' })
+  const ebit = findMetric(nodes, [/zysk.*strata.*dzialalnosci.*operacyjnej|zyskstratazdzialalnoscioperacyjnej|wynik.*operacyjny|wynik.*dzialalnosci.*operacyjnej/], { source: 'pnl' });
+  const ebt = findMetric(nodes, [/zysk.*strata.*brutto|zyskstratabrutto|wynik.*brutto/], { source: 'pnl', exclude: [/sprzedazy/] });
+  const net = findMetric(nodes, [/zysk.*strata.*netto|zyskstratanetto|wynik.*netto/], { source: 'pnl' });
+  const amort = findMetric(nodes, [/^amortyzacja$/], { source: 'pnl', labelOnly: true })
     || findMetric(nodes, [/amortyzacja/], { source: 'pnl' });
-  const cogs = findMetric(nodes, [/koszt.*wlasny.*sprzedazy/], { source: 'pnl' });
+  const cogs = findMetric(nodes, [/koszt.*wlasny.*sprzedazy|kosztwlasnysprzedazy/], { source: 'pnl' });
+  const financialIncome = findMetric(nodes, [/przychody.*finansowe|przychodyfinansowe/], { source: 'pnl' });
+  const financialCosts = findMetric(nodes, [/koszty.*finansowe|kosztyfinansowe/], { source: 'pnl' });
+
+  const ebtValue = ebt?.current ?? null;
+  const finIncomeValue = financialIncome?.current ?? null;
+  const finCostsValue = financialCosts?.current ?? null;
+  const computedEbit = (ebit?.current ?? null) !== null
+    ? ebit.current
+    : (ebtValue !== null && (finIncomeValue !== null || finCostsValue !== null))
+      ? ebtValue - (finIncomeValue || 0) + (finCostsValue || 0)
+      : null;
 
   const m = {
     assets: assets?.current ?? null,
@@ -351,15 +387,17 @@ function computeBaseMetrics(balanceRoot, pnlRoot) {
     equity: equity?.current ?? null,
     equityPrev: equity?.previous ?? null,
     revenue: revenue?.current ?? null,
-    ebit: ebit?.current ?? null,
-    ebt: ebt?.current ?? null,
+    ebit: computedEbit,
+    ebt: ebtValue,
     netProfit: net?.current ?? null,
     amortization: amort?.current ?? null,
     inventory: inventory?.current ?? null,
     inventoryPrev: inventory?.previous ?? null,
     currentAssets: currentAssets?.current ?? null,
     shortLiabilities: shortLiabilities?.current ?? null,
-    cogs: cogs?.current ?? null
+    cogs: cogs?.current ?? null,
+    financialIncome: finIncomeValue,
+    financialCosts: finCostsValue
   };
 
   m.ebitda = (m.ebit !== null && m.amortization !== null) ? m.ebit + m.amortization : null;
@@ -391,7 +429,7 @@ function computeKpiFromMetrics(m) {
 function sumMetrics(companies) {
   const keys = [
     'assets','assetsPrev','liabilitiesTotal','equity','equityPrev','revenue','ebit','ebt','netProfit','amortization',
-    'inventory','inventoryPrev','currentAssets','shortLiabilities','cogs','ebitda'
+    'inventory','inventoryPrev','currentAssets','shortLiabilities','cogs','financialIncome','financialCosts','ebitda'
   ];
   const out = {};
   for (const k of keys) {
