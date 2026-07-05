@@ -30,7 +30,7 @@ function formatValue(v, type = 'money') {
 
 function downloadCsv(filename, rows, columns, isKpi = false) {
   const esc = (x) => `"${String(x ?? '').replaceAll('"', '""')}"`;
-  const header = ['Opis', 'Suma', ...columns.map(c => c.id)].map(esc).join(';');
+  const header = ['Opis', 'Suma', ...columns.map(c => c.name ? `${c.name} (${c.kind}: ${c.id})` : `${c.kind}: ${c.id}`)].map(esc).join(';');
   const lines = rows.map(r => {
     const vals = [
       `${'  '.repeat(r.depth || 0)}${r.label}${isKpi && r.note ? ` (${r.note})` : ''}`,
@@ -48,6 +48,15 @@ function downloadCsv(filename, rows, columns, isKpi = false) {
   URL.revokeObjectURL(url);
 }
 
+function ColumnHeader({ column }) {
+  return (
+    <div className="col-head">
+      {column.name ? <div className="company-name">{column.name}</div> : null}
+      <div className="company-id">{column.kind}: {column.id}</div>
+    </div>
+  );
+}
+
 function FinanceTable({ title, rows = [], columns = [], filename }) {
   return (
     <section>
@@ -61,7 +70,7 @@ function FinanceTable({ title, rows = [], columns = [], filename }) {
             <tr>
               <th className="desc">Opis</th>
               <th className="sum">Suma</th>
-              {columns.map(c => <th key={c.id}>{c.kind}: {c.id}</th>)}
+              {columns.map(c => <th key={c.id}><ColumnHeader column={c} /></th>)}
             </tr>
           </thead>
           <tbody>
@@ -98,7 +107,7 @@ function KpiTable({ rows = [], columns = [] }) {
             <tr>
               <th className="desc">Wskaźnik</th>
               <th className="sum">Suma / grupa</th>
-              {columns.map(c => <th key={c.id}>{c.kind}: {c.id}</th>)}
+              {columns.map(c => <th key={c.id}><ColumnHeader column={c} /></th>)}
             </tr>
           </thead>
           <tbody>

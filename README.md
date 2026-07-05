@@ -69,3 +69,7 @@ npm run dev
 - Rotacja zapasów: koszt własny sprzedaży / średnie zapasy; jeśli nie ma kosztu własnego sprzedaży, używa przychodów / średnie zapasy.
 
 Wskaźniki są rozpoznawane po etykietach pozycji w sprawozdaniach. Przy nietypowych schematach warto sprawdzić ręcznie pozycje źródłowe.
+
+## Kolumny z nazwami spółek
+
+Nagłówki kolumn pokazują aktualną nazwę spółki pobraną z podstawowego endpointu Rejestr.io `/org/{id}` oraz poniżej identyfikator użyty w zapytaniu, np. `NIP: 5882421573` albo `KRS: 0000956152`.

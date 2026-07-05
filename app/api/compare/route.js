@@ -163,6 +163,64 @@ async function fetchRejestrJson(path, params = {}) {
   throw err;
 }
 
+async function fetchOrgBasic(orgId) {
+  return await fetchRejestrJson(`/org/${encodeURIComponent(orgId)}`);
+}
+
+function unwrapValue(v) {
+  if (v && typeof v === 'object' && !Array.isArray(v) && '_wartosc' in v) return v._wartosc;
+  return v;
+}
+
+function firstNonEmptyString(values) {
+  for (const v of values) {
+    const unwrapped = unwrapValue(v);
+    if (typeof unwrapped === 'string' && unwrapped.trim()) return unwrapped.trim();
+    if (typeof unwrapped === 'number' && Number.isFinite(unwrapped)) return String(unwrapped);
+  }
+  return '';
+}
+
+function extractCompanyName(orgData) {
+  if (!orgData || typeof orgData !== 'object') return '';
+
+  // Podstawowy endpoint Rejestr.io zwykle zwraca nazwy.pelna i nazwy.skrocona.
+  const direct = firstNonEmptyString([
+    orgData?.nazwy?.pelna,
+    orgData?.nazwy?.skrocona,
+    orgData?.nazwa,
+    orgData?.nazwa_pelna,
+    orgData?.firma,
+    orgData?.dane?.nazwy?.pelna,
+    orgData?.dane?.nazwy?.skrocona,
+    orgData?.dane?.nazwa,
+    orgData?.dane?.firma
+  ]);
+  if (direct) return direct;
+
+  // Fallback dla bardziej zagnieżdżonych struktur: szukamy pól z nazwą podmiotu.
+  const candidates = [];
+  function walk(obj, path = '') {
+    if (!obj || typeof obj !== 'object' || candidates.length >= 20) return;
+    for (const [k, v] of Object.entries(obj)) {
+      const nextPath = path ? `${path}.${k}` : k;
+      const key = normalizeText(k);
+      const val = unwrapValue(v);
+      if (typeof val === 'string' && val.trim()) {
+        if (/nazwa|firma/.test(key) && !/organ|rejestr|forma|ulica|miejscowosc/.test(key)) {
+          candidates.push({ path: nextPath, value: val.trim() });
+        }
+      } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+        walk(v, nextPath);
+      }
+    }
+  }
+  walk(orgData);
+
+  const preferred = candidates.find(c => /pelna|firma|nazwa/.test(normalizeText(c.path)));
+  return preferred?.value || candidates[0]?.value || '';
+}
+
 async function fetchDocumentList(orgId) {
   return await fetchRejestrJson(`/org/${encodeURIComponent(orgId)}/krs-dokumenty`);
 }
@@ -568,6 +626,14 @@ const KPI_DEFS = [
 
 async function loadCompanyResolved(norm, periodStart, periodEnd, valueField) {
   const warnings = [];
+  let name = '';
+  try {
+    const orgData = await fetchOrgBasic(norm.orgId);
+    name = extractCompanyName(orgData);
+  } catch (e) {
+    warnings.push(`Nie udało się pobrać aktualnej nazwy spółki: ${e.message}`);
+  }
+
   const list = await fetchDocumentList(norm.orgId);
   const selectedPeriod = selectPeriod(list, periodStart, periodEnd);
   if (!selectedPeriod) throw new Error('Nie znaleziono żadnego okresu sprawozdawczego.');
@@ -603,6 +669,7 @@ async function loadCompanyResolved(norm, periodStart, periodEnd, valueField) {
     orgId: norm.orgId,
     display: norm.display,
     kind: norm.kind,
+    name,
     period: selectedPeriod ? { start: selectedPeriod.data_start, end: selectedPeriod.data_koniec } : null,
     docs: { balance: balanceDoc?.id || null, pnl: pnlDoc?.id || null },
     warnings,
@@ -659,6 +726,7 @@ export async function POST(req) {
           orgId: norm.orgId,
           display: norm.display,
           kind: norm.kind,
+          name: '',
           error: e.message,
           warnings: e.details ? [JSON.stringify(e.details)] : [],
           sections: { assets: [], liabilities: [], pnl: [] },
@@ -686,7 +754,7 @@ export async function POST(req) {
       periodEnd,
       valueField,
       companies: results.map(({ sections, metrics, kpis, ...rest }) => rest),
-      columns: results.map(r => ({ id: r.display, orgId: r.orgId, kind: r.kind, error: r.error || null })),
+      columns: results.map(r => ({ id: r.display, orgId: r.orgId, kind: r.kind, name: r.name || '', error: r.error || null })),
       tables: {
         assets: combineSectionRows(results, 'assets', valueField),
         liabilities: combineSectionRows(results, 'liabilities', valueField),
