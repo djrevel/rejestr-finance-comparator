@@ -1,6 +1,8 @@
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+import { authRequiredJson, hasValidAuthCookie } from '../../../lib/auth.js';
+
 const API_BASE = 'https://rejestr.io/api/v2';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -137,14 +139,10 @@ async function fetchDocumentList(orgId) {
 
 function selectMatchingPeriod(documentSets, periodStart, periodEnd) {
   if (!Array.isArray(documentSets)) return null;
-  const exact = documentSets.find(s => s.data_start === periodStart && s.data_koniec === periodEnd);
-  if (exact) return exact;
 
-  const endYear = String(periodEnd || '').slice(0, 4);
-  if (endYear) {
-    return documentSets.find(s => String(s.data_koniec || '').startsWith(endYear)) || null;
-  }
-  return null;
+  // Wymagamy dokładnego okresu. Nie zastępujemy brakującego roku
+  // poprzednim ani najbliższym dostępnym sprawozdaniem.
+  return documentSets.find(s => s.data_start === periodStart && s.data_koniec === periodEnd) || null;
 }
 
 function pickDocument(periodSet, wantedName) {
@@ -204,7 +202,14 @@ async function enrichWithReportInfo(company, periodStart, periodEnd) {
     const list = await fetchDocumentList(company.orgId);
     const selectedPeriod = selectMatchingPeriod(list, periodStart, periodEnd);
     if (!selectedPeriod) {
-      return { ...company, hasReports: false, reason: 'Brak sprawozdania dla wybranego roku/okresu.' };
+      const available = Array.isArray(list)
+        ? list.slice(0, 8).map(s => `${s.data_start} – ${s.data_koniec}`).join(', ')
+        : '';
+      return {
+        ...company,
+        hasReports: false,
+        reason: `Brak sprawozdania dokładnie dla okresu ${periodStart} – ${periodEnd}.${available ? ` Dostępne okresy: ${available}` : ''}`
+      };
     }
 
     const balanceDoc = pickDocument(selectedPeriod, 'bilans');
@@ -225,6 +230,8 @@ async function enrichWithReportInfo(company, periodStart, periodEnd) {
 }
 
 export async function POST(req) {
+  if (!hasValidAuthCookie(req)) return authRequiredJson();
+
   try {
     const body = await req.json();
     const personInput = body.personInput || '';

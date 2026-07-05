@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const MAX_COMPANIES = 20;
 const DEFAULT_IDS = Array.from({ length: MAX_COMPANIES }, () => '');
@@ -142,6 +142,12 @@ export default function Page() {
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
 
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
   const activeCount = useMemo(() => ids.filter(x => x.trim()).length, [ids]);
   const warnings = useMemo(() => {
     if (!data?.companies) return [];
@@ -150,6 +156,51 @@ export default function Page() {
       ...(c.warnings || []).map(w => `${c.kind || ''} ${c.display}: ${w}`)
     ]);
   }, [data]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/auth', { cache: 'no-store' });
+        const json = await res.json();
+        if (!cancelled) {
+          setAuthenticated(Boolean(json.authenticated));
+          setAuthChecked(true);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setAuthError(e?.message || String(e));
+          setAuthChecked(true);
+        }
+      }
+    }
+    checkAuth();
+    return () => { cancelled = true; };
+  }, []);
+
+  async function login(e) {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError('');
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setAuthError(json.error || 'Nie udało się zalogować.');
+        return;
+      }
+      setAuthenticated(true);
+      setPassword('');
+    } catch (e) {
+      setAuthError(e?.message || String(e));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
 
   async function loadPersonCompanies() {
     setPersonLoading(true);
@@ -200,10 +251,46 @@ export default function Page() {
     }
   }
 
+  if (!authChecked) {
+    return (
+      <main className="login-page">
+        <div className="login-card">
+          <h1>Porównywarka Rejestr.io</h1>
+          <p className="lead">Sprawdzam dostęp…</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <main className="login-page">
+        <form className="login-card" onSubmit={login}>
+          <h1>Porównywarka Rejestr.io</h1>
+          <p className="lead">Ta strona jest zabezpieczona hasłem.</p>
+          <div className="control">
+            <label>Hasło</label>
+            <input
+              type="password"
+              value={password}
+              autoFocus
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Wpisz hasło"
+            />
+          </div>
+          <button type="submit" disabled={authLoading || !password.trim()}>
+            {authLoading ? 'Loguję…' : 'Wejdź'}
+          </button>
+          {authError ? <pre className="error">{authError}</pre> : null}
+        </form>
+      </main>
+    );
+  }
+
   return (
     <main>
       <h1>Porównywarka bilansu, RZiS i KPI — Rejestr.io</h1>
-      <p className="lead">Wpisz do 20 numerów KRS. Możesz wpisać KRS z zerami albo bez zer, np. 0000957242 albo 957242. Możesz też wkleić ID albo link osoby z Rejestr.io — aplikacja wypełni pola aktualnie powiązanymi spółkami po numerach KRS, które mają dokumenty finansowe w wybranym okresie.</p>
+      <p className="lead">Wpisz do 20 numerów KRS. Możesz wpisać KRS z zerami albo bez zer, np. 0000957242 albo 957242. Możesz też wkleić ID albo link osoby z Rejestr.io — aplikacja wypełni pola aktualnie powiązanymi spółkami po numerach KRS, które mają dokumenty finansowe dokładnie w wybranym okresie.</p>
 
       <div className="card">
         <div className="person-loader">
@@ -223,9 +310,9 @@ export default function Page() {
         {personError ? <pre className="error">{personError}</pre> : null}
         {personResult ? (
           <div className="person-result">
-            Wczytano <strong>{personResult.companies.length}</strong> z <strong>{personResult.totalWithReports}</strong> aktualnie powiązanych spółek z dokumentami dla okresu.
+            Wczytano <strong>{personResult.companies.length}</strong> z <strong>{personResult.totalWithReports}</strong> aktualnie powiązanych spółek z dokumentami dokładnie dla wybranego okresu.
             {personResult.truncated ? ` Pokazuję pierwsze ${MAX_COMPANIES}; pozostałe można dopisać ręcznie.` : ''}
-            {personResult.skipped?.length ? <div className="small">Pominięto {personResult.skipped.length} spółek bez dokumentów w wybranym okresie albo z błędem odczytu.</div> : null}
+            {personResult.skipped?.length ? <div className="small">Pominięto {personResult.skipped.length} spółek bez dokumentów dokładnie w wybranym okresie albo z błędem odczytu.</div> : null}
           </div>
         ) : null}
 

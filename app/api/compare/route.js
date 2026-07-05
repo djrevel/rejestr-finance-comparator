@@ -1,6 +1,8 @@
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+import { authRequiredJson, hasValidAuthCookie } from '../../../lib/auth.js';
+
 const API_BASE = 'https://rejestr.io/api/v2';
 const CURRENT_FIELD = 'pln_rok_obrotowy_biezacy';
 const PREVIOUS_FIELD = 'pln_rok_obrotowy_poprzedni';
@@ -197,18 +199,10 @@ async function fetchDocumentJson(orgId, docId) {
 
 function selectPeriod(documentSets, periodStart, periodEnd) {
   if (!Array.isArray(documentSets)) return null;
-  const exact = documentSets.find(s => s.data_start === periodStart && s.data_koniec === periodEnd);
-  if (exact) return exact;
 
-  // Fallback: rok końca okresu. Pomaga przy minimalnych różnicach dat albo przesuniętym roku obrotowym.
-  const year = String(periodEnd || '').slice(0, 4);
-  if (year) {
-    const sameYear = documentSets.find(s => String(s.data_koniec || '').startsWith(year));
-    if (sameYear) return sameYear;
-  }
-
-  // Ostatecznie najnowszy okres.
-  return [...documentSets].sort((a, b) => String(b.data_koniec).localeCompare(String(a.data_koniec)))[0] || null;
+  // Celowo wymagamy dokładnego okresu. Nie podstawiamy poprzedniego roku
+  // ani najnowszego dostępnego sprawozdania, żeby wyniki nie mieszały lat.
+  return documentSets.find(s => s.data_start === periodStart && s.data_koniec === periodEnd) || null;
 }
 
 function pickDocument(periodSet, wantedName) {
@@ -602,10 +596,11 @@ async function loadCompanyResolved(norm, periodStart, periodEnd, valueField) {
 
   const list = await fetchDocumentList(norm.orgId);
   const selectedPeriod = selectPeriod(list, periodStart, periodEnd);
-  if (!selectedPeriod) throw new Error('Nie znaleziono żadnego okresu sprawozdawczego.');
-
-  if (selectedPeriod.data_start !== periodStart || selectedPeriod.data_koniec !== periodEnd) {
-    warnings.push(`Użyto okresu ${selectedPeriod.data_start} – ${selectedPeriod.data_koniec}, bo nie znaleziono dokładnego okresu ${periodStart} – ${periodEnd}.`);
+  if (!selectedPeriod) {
+    const available = Array.isArray(list)
+      ? list.slice(0, 8).map(s => `${s.data_start} – ${s.data_koniec}`).join(', ')
+      : '';
+    throw new Error(`Nie znaleziono dokładnego okresu ${periodStart} – ${periodEnd}.${available ? ` Dostępne okresy: ${available}` : ''}`);
   }
 
   const balanceDoc = pickDocument(selectedPeriod, 'bilans');
@@ -673,6 +668,8 @@ async function loadCompany(norm, periodStart, periodEnd, valueField) {
 }
 
 export async function POST(req) {
+  if (!hasValidAuthCookie(req)) return authRequiredJson();
+
   try {
     const body = await req.json();
     const ids = Array.isArray(body.ids) ? body.ids : [];
