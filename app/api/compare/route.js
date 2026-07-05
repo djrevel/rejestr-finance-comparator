@@ -142,8 +142,43 @@ function pickDocument(periodSet, wantedName) {
     || null;
 }
 
+function cleanLabelPart(v) {
+  return String(v || '').replace(/\s+/g, ' ').trim();
+}
+
+function looksLikeOrdinalLabel(v) {
+  const s = cleanLabelPart(v);
+  if (!s) return false;
+  // Typowe oznaczenia pozycji w sprawozdaniach: A, A., I, II, 1, 1., a) itd.
+  return /^[A-ZĄĆĘŁŃÓŚŹŻ]{1,3}\.?$/.test(s)
+    || /^[IVXLCDM]{1,6}\.?$/i.test(s)
+    || /^\d{1,3}\.?$/.test(s)
+    || /^[a-z]\)?\.?$/i.test(s);
+}
+
 function labelOf(node) {
-  return node?.etykieta || node?.podetykieta || node?.nazwa_wezla || '(bez nazwy)';
+  const etykieta = cleanLabelPart(node?.etykieta);
+  const podetykieta = cleanLabelPart(node?.podetykieta);
+  const nazwa = cleanLabelPart(node?.nazwa_wezla);
+
+  // W części JSON-ów Rejestr.io pole etykieta to tylko „A.” / „I.”,
+  // a prawdziwa nazwa pozycji jest w podetykieta. Dla KPI i wyświetlania
+  // wolimy wtedy podetykietę, bo inaczej np. kapitał własny nie jest znajdowany.
+  if (podetykieta && (!etykieta || looksLikeOrdinalLabel(etykieta))) return podetykieta;
+  if (etykieta && podetykieta && etykieta !== podetykieta) return `${etykieta} ${podetykieta}`;
+  return etykieta || podetykieta || nazwa || '(bez nazwy)';
+}
+
+function searchTextOf(node, pathLabel = '') {
+  const parts = [
+    labelOf(node),
+    node?.etykieta,
+    node?.podetykieta,
+    splitCamelCase(node?.nazwa_wezla || ''),
+    node?.nazwa_wezla || '',
+    pathLabel
+  ];
+  return parts.map(normalizeText).filter(Boolean).join(' | ');
 }
 
 function nodePartKey(node) {
@@ -273,7 +308,7 @@ function flattenAllNodes(root, source) {
     const nodeNameNorm = normalizeText(splitCamelCase(nodeName));
     const compactNodeNameNorm = normalizeText(nodeName);
     const pathNorm = normalizeText(pathLabel);
-    const searchText = [labelNorm, nodeNameNorm, compactNodeNameNorm, pathNorm].filter(Boolean).join(' | ');
+    const searchText = searchTextOf(node, pathLabel);
 
     const item = {
       node,
@@ -349,15 +384,18 @@ function computeBaseMetrics(balanceRoot, pnlRoot) {
     || findMetric(nodes, [/aktywa.*razem|aktywarazem/], { source: 'balance' });
   const liabilitiesTotal = findMetric(nodes, [/^pasywa razem$/], { source: 'balance' })
     || findMetric(nodes, [/pasywa.*razem|pasywarazem/], { source: 'balance' });
-  const equity = findMetric(nodes, [/kapital.*fundusz.*wlasny|kapitalfunduszwlasny|kapital.*wlasny/], {
+  const equity = findMetric(nodes, [/^kapital\s*\(?fundusz\)?\s*wlasny$/], { source: 'balance', labelOnly: true })
+    || findMetric(nodes, [/kapital.*fundusz.*wlasny|kapitalfunduszwlasny|kapital.*wlasny/], {
       source: 'balance',
-      exclude: [/nalezny|wplaty|udzialy.*wlasne|kapital.*podstawowy|kapital.*zapasowy|kapital.*rezerwowy|zysk.*strata/]
+      exclude: [/nalezny|wplaty|udzialy.*wlasne|kapital.*podstawowy|kapital.*zapasowy|kapital.*rezerwowy|zysk.*strata|wynik.*roku/]
     })
-    || findMetric(nodes, [/^kapital.*wlasny$/], { source: 'balance', labelOnly: true });
+    || findMetric(nodes, [/^aktywa.*netto$/], { source: 'balance', labelOnly: true });
   const inventory = findMetric(nodes, [/^zapasy$/], { source: 'balance', labelOnly: true })
     || findMetric(nodes, [/zapasy/], { source: 'balance' });
   const currentAssets = findMetric(nodes, [/aktywa.*obrotowe|aktywaobrotowe/], { source: 'balance' });
   const shortLiabilities = findMetric(nodes, [/zobowiazania.*krotkoterminowe|zobowiazaniakrotkoterminowe/], { source: 'balance' });
+  const debtAndProvisions = findMetric(nodes, [/^zobowiazania.*rezerwy.*zobowiazania$/], { source: 'balance', labelOnly: true })
+    || findMetric(nodes, [/zobowiazania.*rezerwy.*zobowiazania|zobowiazaniairezerwynazobowiazania/], { source: 'balance' });
 
   const revenue = findMetric(nodes, [/przychody.*netto.*sprzedazy|przychodynettozesprzedazy/], { source: 'pnl' })
     || findMetric(nodes, [/przychody.*sprzedazy/], { source: 'pnl' })
@@ -384,8 +422,16 @@ function computeBaseMetrics(balanceRoot, pnlRoot) {
     assets: assets?.current ?? null,
     assetsPrev: assets?.previous ?? null,
     liabilitiesTotal: liabilitiesTotal?.current ?? null,
-    equity: equity?.current ?? null,
-    equityPrev: equity?.previous ?? null,
+    equity: (equity?.current ?? null) !== null
+      ? equity.current
+      : ((liabilitiesTotal?.current ?? null) !== null && (debtAndProvisions?.current ?? null) !== null
+        ? liabilitiesTotal.current - debtAndProvisions.current
+        : null),
+    equityPrev: (equity?.previous ?? null) !== null
+      ? equity.previous
+      : ((liabilitiesTotal?.previous ?? null) !== null && (debtAndProvisions?.previous ?? null) !== null
+        ? liabilitiesTotal.previous - debtAndProvisions.previous
+        : null),
     revenue: revenue?.current ?? null,
     ebit: computedEbit,
     ebt: ebtValue,
