@@ -163,7 +163,7 @@ export default function Page() {
   return (
     <main>
       <h1>Porównywarka bilansu, RZiS i KPI — Rejestr.io</h1>
-      <p className="lead">Wpisz do 10 numerów NIP lub KRS. Pierwsza kolumna to opis, druga suma grupy, kolejne kolumny to poszczególne spółki.</p>
+      <p className="lead">Wpisz do 10 numerów NIP albo KRS. Możesz wpisać same cyfry albo jawnie: NIP 5882421573 / KRS 0000956152. Przy 10 cyfrach bez prefiksu aplikacja spróbuje najpierw NIP, potem KRS.</p>
 
       <div className="card">
         <div className="form-grid">
@@ -171,7 +171,7 @@ export default function Page() {
             <input
               key={idx}
               value={id}
-              placeholder={`NIP albo KRS #${idx + 1}`}
+              placeholder={`NIP / KRS #${idx + 1}`}
               onChange={(e) => {
                 const next = [...ids];
                 next[idx] = e.target.value;

@@ -11,6 +11,18 @@ Aplikacja Next.js gotowa do wdrożenia na Vercel. Działa jako jedna strona + ba
 - tabela KPI: EBITDA, EBIT, EBT, kapitał własny/suma bilansowa, RoS, RoE, rotacja zapasów itd.,
 - eksport CSV dla każdej tabeli.
 
+
+## NIP czy KRS
+
+W polach możesz wpisać:
+
+- `5882421573` — aplikacja potraktuje 10 cyfr najpierw jako NIP,
+- `NIP 5882421573` — wymusza NIP,
+- `956152` — traktowane jako KRS,
+- `KRS 0000956152` — wymusza KRS, również z zerami wiodącymi.
+
+Jeżeli wpiszesz 10 cyfr bez prefiksu, aplikacja spróbuje najpierw wariantu NIP, a jeśli Rejestr.io nie zwróci dokumentów, automatycznie spróbuje wariantu KRS.
+
 ## Wdrożenie na Vercel — najprościej
 
 1. Załóż konto na https://vercel.com.

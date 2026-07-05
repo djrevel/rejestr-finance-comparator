@@ -27,16 +27,77 @@ function keyText(s) {
     .replace(/^_+|_+$/g, '');
 }
 
+function stripLeadingZerosForKrs(digits) {
+  const stripped = String(digits || '').replace(/^0+/, '');
+  return stripped || '0';
+}
+
+function uniqueCandidates(candidates) {
+  const seen = new Set();
+  return candidates.filter(c => {
+    const key = `${c.kind}:${c.orgId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function normalizeOrgId(inputRaw) {
   const raw = String(inputRaw || '').trim();
   if (!raw) return null;
 
-  const alreadyNip = raw.match(/^nip\s*([0-9]{10})$/i);
-  if (alreadyNip) return { orgId: `nip${alreadyNip[1]}`, display: alreadyNip[1], kind: 'NIP' };
-
+  const lower = raw.toLowerCase();
   const digits = raw.replace(/\D/g, '');
-  if (digits.length === 10) return { orgId: `nip${digits}`, display: digits, kind: 'NIP' };
-  if (digits.length > 0 && digits.length <= 10) return { orgId: digits, display: digits.padStart(10, '0'), kind: 'KRS' };
+  if (!digits) return null;
+
+  // Jawne prefiksy usuwają niejednoznaczność pełnych 10-cyfrowych numerów:
+  // "NIP 5882421573" -> tylko NIP, "KRS 0000956152" -> tylko KRS.
+  if (/^nip\b|^nip[:#-]/i.test(lower) || /^nip\s*[0-9]/i.test(lower)) {
+    if (digits.length !== 10) return null;
+    return {
+      raw,
+      display: digits,
+      kind: 'NIP',
+      orgId: `nip${digits}`,
+      candidates: [{ orgId: `nip${digits}`, display: digits, kind: 'NIP' }]
+    };
+  }
+
+  if (/^krs\b|^krs[:#-]/i.test(lower) || /^krs\s*[0-9]/i.test(lower)) {
+    if (digits.length < 1 || digits.length > 10) return null;
+    const orgId = stripLeadingZerosForKrs(digits);
+    return {
+      raw,
+      display: digits.padStart(10, '0'),
+      kind: 'KRS',
+      orgId,
+      candidates: [{ orgId, display: digits.padStart(10, '0'), kind: 'KRS' }]
+    };
+  }
+
+  // Bez prefiksu:
+  // - 10 cyfr jest niejednoznaczne (NIP albo pełny KRS z zerami).
+  //   Próbujemy najpierw NIP, a jeśli Rejestr.io zwróci błąd, potem KRS.
+  // - mniej niż 10 cyfr traktujemy jako KRS.
+  if (digits.length === 10) {
+    const krsOrgId = stripLeadingZerosForKrs(digits);
+    const candidates = uniqueCandidates([
+      { orgId: `nip${digits}`, display: digits, kind: 'NIP' },
+      { orgId: krsOrgId, display: digits.padStart(10, '0'), kind: 'KRS' }
+    ]);
+    return { raw, display: digits, kind: 'AUTO', orgId: candidates[0].orgId, candidates };
+  }
+
+  if (digits.length > 0 && digits.length < 10) {
+    const orgId = stripLeadingZerosForKrs(digits);
+    return {
+      raw,
+      display: digits.padStart(10, '0'),
+      kind: 'KRS',
+      orgId,
+      candidates: [{ orgId, display: digits.padStart(10, '0'), kind: 'KRS' }]
+    };
+  }
 
   return null;
 }
@@ -505,7 +566,7 @@ const KPI_DEFS = [
   { key: 'inventoryDays', label: 'Zapasy w dniach', type: 'days' }
 ];
 
-async function loadCompany(norm, periodStart, periodEnd, valueField) {
+async function loadCompanyResolved(norm, periodStart, periodEnd, valueField) {
   const warnings = [];
   const list = await fetchDocumentList(norm.orgId);
   const selectedPeriod = selectPeriod(list, periodStart, periodEnd);
@@ -549,6 +610,33 @@ async function loadCompany(norm, periodStart, periodEnd, valueField) {
     metrics,
     kpis
   };
+}
+
+
+async function loadCompany(norm, periodStart, periodEnd, valueField) {
+  const candidates = norm.candidates?.length ? norm.candidates : [norm];
+  const errors = [];
+
+  for (const candidate of candidates) {
+    try {
+      const loaded = await loadCompanyResolved(candidate, periodStart, periodEnd, valueField);
+      const usedFallback = candidates.length > 1 && candidate.orgId !== candidates[0].orgId;
+      return {
+        ...loaded,
+        input: norm.raw || norm.display,
+        warnings: [
+          ...(usedFallback ? [`Wpis ${norm.raw || norm.display} rozpoznano jako ${candidate.kind}, bo pierwszy wariant nie zadziałał.`] : []),
+          ...(loaded.warnings || [])
+        ]
+      };
+    } catch (e) {
+      errors.push(`${candidate.kind} ${candidate.display}: ${e.message}`);
+    }
+  }
+
+  const err = new Error(errors.join(' | ') || 'Nie udało się odczytać numeru jako NIP ani KRS.');
+  err.details = errors;
+  throw err;
 }
 
 export async function POST(req) {
