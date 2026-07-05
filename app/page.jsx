@@ -31,7 +31,7 @@ function formatValue(v, type = 'money') {
 
 function downloadCsv(filename, rows, columns, isKpi = false) {
   const esc = (x) => `"${String(x ?? '').replaceAll('"', '""')}"`;
-  const header = ['Opis', 'Suma', ...columns.map(c => c.name ? `${c.name} (${c.kind}: ${c.id})` : `${c.kind}: ${c.id}`)].map(esc).join(';');
+  const header = ['Opis', 'Suma', ...columns.map(c => c.name ? `${c.name} (KRS: ${c.id})` : `KRS: ${c.id}`)].map(esc).join(';');
   const lines = rows.map(r => {
     const vals = [
       `${'  '.repeat(r.depth || 0)}${r.label}${isKpi && r.note ? ` (${r.note})` : ''}`,
@@ -53,7 +53,7 @@ function ColumnHeader({ column }) {
   return (
     <div className="col-head">
       {column.name ? <div className="company-name">{column.name}</div> : null}
-      <div className="company-id">{column.kind}: {column.id}</div>
+      <div className="company-id">KRS: {column.id}</div>
     </div>
   );
 }
@@ -167,7 +167,7 @@ export default function Page() {
         return;
       }
 
-      const next = Array.from({ length: MAX_COMPANIES }, (_, i) => json.companies?.[i]?.preferredId || '');
+      const next = Array.from({ length: MAX_COMPANIES }, (_, i) => json.companies?.[i]?.krs || json.companies?.[i]?.preferredId || '');
       setIds(next);
       setPersonResult(json);
     } catch (e) {
@@ -203,7 +203,7 @@ export default function Page() {
   return (
     <main>
       <h1>Porównywarka bilansu, RZiS i KPI — Rejestr.io</h1>
-      <p className="lead">Wpisz do 20 numerów NIP albo KRS. Możesz wpisać same cyfry albo jawnie: NIP 5882421573 / KRS 0000956152. Przy 10 cyfrach bez prefiksu aplikacja spróbuje najpierw NIP, potem KRS. Możesz też wkleić ID albo link osoby z Rejestr.io, a aplikacja wypełni pola aktualnie powiązanymi spółkami, które mają dokumenty finansowe w wybranym okresie.</p>
+      <p className="lead">Wpisz do 20 numerów KRS. Możesz wpisać KRS z zerami albo bez zer, np. 0000957242 albo 957242. Możesz też wkleić ID albo link osoby z Rejestr.io — aplikacja wypełni pola aktualnie powiązanymi spółkami po numerach KRS, które mają dokumenty finansowe w wybranym okresie.</p>
 
       <div className="card">
         <div className="person-loader">
@@ -234,7 +234,7 @@ export default function Page() {
             <input
               key={idx}
               value={id}
-              placeholder={`NIP / KRS #${idx + 1}`}
+              placeholder={`KRS #${idx + 1}`}
               onChange={(e) => {
                 const next = [...ids];
                 next[idx] = e.target.value;

@@ -4,36 +4,35 @@ Aplikacja Next.js gotowa do wdrożenia na Vercel. Działa jako jedna strona + ba
 
 ## Co robi
 
-- wpisanie do 20 numerów NIP albo KRS,
+- wpisanie do 20 numerów KRS,
 - pobranie z Rejestr.io bilansu i rachunku zysków i strat dla wskazanego okresu,
 - tabela: opis | suma | spółka 1 | spółka 2 | ...,
 - osobne tabele: Aktywa, Pasywa, RZiS,
 - tabela KPI: EBITDA, EBIT, EBT, kapitał własny/suma bilansowa, RoS, RoE, rotacja zapasów itd.,
 - eksport CSV dla każdej tabeli,
-- wczytanie aktualnie powiązanych spółek po ID/linku osoby z Rejestr.io i automatyczne uzupełnienie pól NIP/KRS.
+- wczytanie aktualnie powiązanych spółek po ID/linku osoby z Rejestr.io i automatyczne uzupełnienie pól KRS.
 
 
 ## Wczytywanie spółek po osobie z Rejestr.io
 
-Nad polami NIP/KRS jest sekcja **Osoba z Rejestr.io — ID albo link**. Możesz wkleić np.:
+Nad polami KRS jest sekcja **Osoba z Rejestr.io — ID albo link**. Możesz wkleić np.:
 
 ```text
 123456
 https://rejestr.io/osoby/123456/jan-kowalski
 ```
 
-Aplikacja odpytuje endpoint `GET /api/v2/osoby/{id}/krs-powiazania?aktualnosc=aktualne`, pomija spółki wykreślone oraz te bez dokumentów finansowych w wybranym okresie, a następnie uzupełnia maksymalnie 20 pól NIP/KRS. Jeśli powiązanych spółek jest więcej niż 20, pozostałe można dopisać ręcznie.
+Aplikacja odpytuje endpoint `GET /api/v2/osoby/{id}/krs-powiazania?aktualnosc=aktualne`, pomija spółki wykreślone oraz te bez dokumentów finansowych w wybranym okresie, a następnie uzupełnia maksymalnie 20 pól KRS. Jeśli powiązanych spółek jest więcej niż 20, pozostałe można dopisać ręcznie.
 
-## NIP czy KRS
+## Identyfikatory spółek: KRS
 
-W polach możesz wpisać:
+Od tej wersji porównywarka przyjmuje w polach wyłącznie numery KRS. Możesz wpisać KRS z zerami lub bez zer, np.:
 
-- `5882421573` — aplikacja potraktuje 10 cyfr najpierw jako NIP,
-- `NIP 5882421573` — wymusza NIP,
-- `956152` — traktowane jako KRS,
-- `KRS 0000956152` — wymusza KRS, również z zerami wiodącymi.
+- `0000957242`
+- `957242`
+- `KRS 0000957242`
 
-Jeżeli wpiszesz 10 cyfr bez prefiksu, aplikacja spróbuje najpierw wariantu NIP, a jeśli Rejestr.io nie zwróci dokumentów, automatycznie spróbuje wariantu KRS.
+Import spółek z powiązań osoby również uzupełnia pola numerami KRS. Dzięki temu unikamy błędu 409 z Rejestr.io, który może wystąpić, gdy jeden NIP jest przypisany do więcej niż jednej organizacji.
 
 ## Wdrożenie na Vercel — najprościej
 
@@ -84,4 +83,4 @@ Wskaźniki są rozpoznawane po etykietach pozycji w sprawozdaniach. Przy nietypo
 
 ## Kolumny z nazwami spółek
 
-Nagłówki kolumn pokazują aktualną nazwę spółki pobraną z podstawowego endpointu Rejestr.io `/org/{id}` oraz poniżej identyfikator użyty w zapytaniu, np. `NIP: 5882421573` albo `KRS: 0000956152`.
+Nagłówki kolumn pokazują aktualną nazwę spółki pobraną z podstawowego endpointu Rejestr.io `/org/{id}` oraz poniżej identyfikator użyty w zapytaniu, np. `KRS: 0000956152`.

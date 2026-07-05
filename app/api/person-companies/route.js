@@ -189,8 +189,10 @@ function relationToCompany(item) {
     orgId,
     krs,
     nip,
-    preferredId: nip || krs,
-    preferredKind: nip ? 'NIP' : 'KRS',
+    // Wypełniamy porównywarkę zawsze numerem KRS, nie NIP.
+    // To unika błędu 409, gdy jeden NIP jest przypisany do kilku organizacji.
+    preferredId: krs,
+    preferredKind: 'KRS',
     name,
     role: relationRole(item),
     raw: item

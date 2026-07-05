@@ -48,58 +48,24 @@ function normalizeOrgId(inputRaw) {
 
   const lower = raw.toLowerCase();
   const digits = raw.replace(/\D/g, '');
-  if (!digits) return null;
+  if (!digits || digits.length > 10) return null;
 
-  // Jawne prefiksy usuwają niejednoznaczność pełnych 10-cyfrowych numerów:
-  // "NIP 5882421573" -> tylko NIP, "KRS 0000956152" -> tylko KRS.
-  if (/^nip\b|^nip[:#-]/i.test(lower) || /^nip\s*[0-9]/i.test(lower)) {
-    if (digits.length !== 10) return null;
-    return {
-      raw,
-      display: digits,
-      kind: 'NIP',
-      orgId: `nip${digits}`,
-      candidates: [{ orgId: `nip${digits}`, display: digits, kind: 'NIP' }]
-    };
+  // Od tej wersji pola są wyłącznie na KRS. To usuwa problem NIP-ów,
+  // które w Rejestr.io mogą wskazywać więcej niż jedną organizację (409).
+  // Akceptujemy: "957242", "0000957242", "KRS 0000957242".
+  // Jawny prefiks NIP odrzucamy, żeby nie maskować pomyłki użytkownika.
+  if (/^nip\b|^nip[:#-]|^nip\s*[0-9]/i.test(lower)) {
+    return null;
   }
 
-  if (/^krs\b|^krs[:#-]/i.test(lower) || /^krs\s*[0-9]/i.test(lower)) {
-    if (digits.length < 1 || digits.length > 10) return null;
-    const orgId = stripLeadingZerosForKrs(digits);
-    return {
-      raw,
-      display: digits.padStart(10, '0'),
-      kind: 'KRS',
-      orgId,
-      candidates: [{ orgId, display: digits.padStart(10, '0'), kind: 'KRS' }]
-    };
-  }
-
-  // Bez prefiksu:
-  // - 10 cyfr jest niejednoznaczne (NIP albo pełny KRS z zerami).
-  //   Próbujemy najpierw NIP, a jeśli Rejestr.io zwróci błąd, potem KRS.
-  // - mniej niż 10 cyfr traktujemy jako KRS.
-  if (digits.length === 10) {
-    const krsOrgId = stripLeadingZerosForKrs(digits);
-    const candidates = uniqueCandidates([
-      { orgId: `nip${digits}`, display: digits, kind: 'NIP' },
-      { orgId: krsOrgId, display: digits.padStart(10, '0'), kind: 'KRS' }
-    ]);
-    return { raw, display: digits, kind: 'AUTO', orgId: candidates[0].orgId, candidates };
-  }
-
-  if (digits.length > 0 && digits.length < 10) {
-    const orgId = stripLeadingZerosForKrs(digits);
-    return {
-      raw,
-      display: digits.padStart(10, '0'),
-      kind: 'KRS',
-      orgId,
-      candidates: [{ orgId, display: digits.padStart(10, '0'), kind: 'KRS' }]
-    };
-  }
-
-  return null;
+  const orgId = stripLeadingZerosForKrs(digits);
+  return {
+    raw,
+    display: digits.padStart(10, '0'),
+    kind: 'KRS',
+    orgId,
+    candidates: [{ orgId, display: digits.padStart(10, '0'), kind: 'KRS' }]
+  };
 }
 
 function authHeaderVariants() {
@@ -701,7 +667,7 @@ async function loadCompany(norm, periodStart, periodEnd, valueField) {
     }
   }
 
-  const err = new Error(errors.join(' | ') || 'Nie udało się odczytać numeru jako NIP ani KRS.');
+  const err = new Error(errors.join(' | ') || 'Nie udało się odczytać numeru jako KRS.');
   err.details = errors;
   throw err;
 }
@@ -715,7 +681,7 @@ export async function POST(req) {
     const valueField = body.valueField || CURRENT_FIELD;
 
     const normalized = ids.map(normalizeOrgId).filter(Boolean).slice(0, 20);
-    if (!normalized.length) return json({ error: 'Podaj co najmniej jeden NIP albo KRS.' }, 400);
+    if (!normalized.length) return json({ error: 'Podaj co najmniej jeden numer KRS.' }, 400);
 
     const results = [];
     for (const norm of normalized) {
